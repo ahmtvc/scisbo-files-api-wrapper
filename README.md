@@ -24,8 +24,8 @@ To use the Files API Wrapper with Maven and JitPack, follow these steps:
 <dependencies>
     <dependency>
         <groupId>com.github.ahmtvc</groupId>
-        <artifactId>files-api-wrapper</artifactId>
-        <version>latest</version>
+        <artifactId>scisbo-files-api-wrapper</artifactId>
+        <version>1.0.0</version>
     </dependency>
 </dependencies>
 ```
