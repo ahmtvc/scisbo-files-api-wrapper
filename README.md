@@ -47,6 +47,76 @@ To use the Files API Wrapper with Maven and JitPack, follow these steps:
 </build>
 ```
 
+## Usage Examples
+
+### Basic File Upload
+
+```java
+// Configure client
+FilesApiConfig config = FilesApiConfig.builder()
+    .apiKey("your-api-key")
+    .baseUrl("https://api.example.com/")
+    .build();
+
+FilesApiClient client = new FilesApiClient(config);
+
+// Create file data
+FileData fileData = FileDataBuilder.builder()
+    .filename("document.pdf")
+    .contentType("application/pdf")
+    .content(inputStream)
+    .build();
+
+// Create upload request
+FileUploadRequest request = FileUploadRequestBuilder.builder()
+    .path("/documents")
+    .addFile(fileData)
+    .addMetadata("category", "important")
+    .build();
+
+// Upload file
+try {
+    FileUploadResponse response = client.uploadFiles(request);
+    if (response.isSuccess()) {
+        System.out.println("Upload successful!");
+        response.getUploadedFiles().forEach(file -> {
+            System.out.println("File ID: " + file.getId());
+        });
+    }
+} catch (FileUploadException e) {
+    System.err.println("Upload failed: " + e.getMessage());
+}
+```
+
+### Async File Upload
+
+```java
+CompletableFuture<FileUploadResponse> future = client.uploadFilesAsync(request);
+future.thenAccept(response -> {
+    if (response.isSuccess()) {
+        System.out.println("Async upload completed!");
+    }
+}).exceptionally(throwable -> {
+    System.err.println("Async upload failed: " + throwable.getMessage());
+    return null;
+});
+```
+
+### Access Token Request
+
+```java
+try {
+    AccessTokenResponse response = client.requestAccessToken("file-id-123");
+    if (response.isSuccess()) {
+        String token = response.getToken();
+        String previewUrl = client.generatePreviewUrl("file-id-123", token);
+        System.out.println("Preview URL: " + previewUrl);
+    }
+} catch (AccessTokenException e) {
+    System.err.println("Token request failed: " + e.getMessage());
+}
+```
+
 ## Core Components
 
 ### 1. FilesApiClient
@@ -258,91 +328,6 @@ Exception thrown when access token operations fail.
 public class AccessTokenException extends FilesApiException {
     // Inherits from FilesApiException
 }
-```
-
-## Usage Examples
-
-### Basic File Upload
-
-```java
-// Configure client
-FilesApiConfig config = FilesApiConfig.builder()
-    .apiKey("your-api-key")
-    .baseUrl("https://api.example.com/")
-    .build();
-
-FilesApiClient client = new FilesApiClient(config);
-
-// Create file data
-FileData fileData = FileDataBuilder.builder()
-    .filename("document.pdf")
-    .contentType("application/pdf")
-    .content(inputStream)
-    .build();
-
-// Create upload request
-FileUploadRequest request = FileUploadRequestBuilder.builder()
-    .path("/documents")
-    .addFile(fileData)
-    .addMetadata("category", "important")
-    .build();
-
-// Upload file
-try {
-    FileUploadResponse response = client.uploadFiles(request);
-    if (response.isSuccess()) {
-        System.out.println("Upload successful!");
-        response.getUploadedFiles().forEach(file -> {
-            System.out.println("File ID: " + file.getId());
-        });
-    }
-} catch (FileUploadException e) {
-    System.err.println("Upload failed: " + e.getMessage());
-}
-```
-
-### Async File Upload
-
-```java
-CompletableFuture<FileUploadResponse> future = client.uploadFilesAsync(request);
-future.thenAccept(response -> {
-    if (response.isSuccess()) {
-        System.out.println("Async upload completed!");
-    }
-}).exceptionally(throwable -> {
-    System.err.println("Async upload failed: " + throwable.getMessage());
-    return null;
-});
-```
-
-### Access Token Request
-
-```java
-try {
-    AccessTokenResponse response = client.requestAccessToken("file-id-123");
-    if (response.isSuccess()) {
-        String token = response.getToken();
-        String previewUrl = client.generatePreviewUrl("file-id-123", token);
-        System.out.println("Preview URL: " + previewUrl);
-    }
-} catch (AccessTokenException e) {
-    System.err.println("Token request failed: " + e.getMessage());
-}
-```
-
-### Legacy Spring Integration
-
-```java
-// For existing Spring applications
-List<MultipartFile> files = // ... get files from request
-Map<String, String> metadata = Map.of("category", "documents");
-
-client.uploadMultipartFiles("/uploads", files, metadata, uploadedFiles -> {
-    System.out.println("Uploaded " + uploadedFiles.size() + " files");
-    uploadedFiles.forEach(file -> {
-        System.out.println("File ID: " + file.getId());
-    });
-});
 ```
 
 ## Error Handling Best Practices
