@@ -5,7 +5,7 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>me.selmir.apps</groupId>
+    <groupId>com.github.ahmtvc</groupId>
     <artifactId>files-api-wrapper</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>

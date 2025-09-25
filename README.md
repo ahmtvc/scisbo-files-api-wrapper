@@ -23,9 +23,9 @@ To use the Files API Wrapper with Maven and JitPack, follow these steps:
 ```xml
 <dependencies>
     <dependency>
-        <groupId>me.selmir.apps</groupId>
+        <groupId>com.github.ahmtvc</groupId>
         <artifactId>files-api-wrapper</artifactId>
-        <version>1.0.0</version>
+        <version>latest</version>
     </dependency>
 </dependencies>
 ```
