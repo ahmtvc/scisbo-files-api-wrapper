@@ -30,13 +30,9 @@ public class FilesApiConfig {
     
     @Builder.Default
     private final boolean enableLogging = true;
-    
-    public String getUploadUrl() {
-        return baseUrl + "/api/files";
-    }
-    
+
     public String getAccessTokenUrl() {
-        return baseUrl + "/api/access-tokens";
+        return baseUrl + "/access-tokens";
     }
     
     public boolean isLoggingEnabled() {

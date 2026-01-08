@@ -73,7 +73,7 @@ public class FilesApiClient {
             }
             
             HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(config.getUploadUrl() + "?path=" + request.getPath()))
+                    .uri(URI.create(config.getBaseUrl() + "?path=" + request.getPath()))
                     .header("Content-Type", "multipart/form-data; boundary=" + bodyPublisher.getBoundary())
                     .header("API-KEY", config.getApiKey())
                     .timeout(config.getReadTimeout())
@@ -250,7 +250,7 @@ public class FilesApiClient {
      */
     public String generatePreviewUrl(String fileId, String accessToken) {
         return String.format("%s/%s/download?access_token=%s", 
-                config.getUploadUrl(), fileId, accessToken);
+                config.getBaseUrl(), fileId, accessToken);
     }
     
     private FileUploadResponse parseUploadResponse(String responseBody) throws FileUploadException {
