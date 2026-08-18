@@ -1,5 +1,6 @@
 package com.scisbo.filesapi.data.file;
 
+import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -35,6 +36,7 @@ public class FileInfo {
     private Map<String, String> metadata;
     
     @SerializedName("createdAt")
+    @JsonAdapter(EpochMillisAdapter.class)
     private long createdAt;
 
     @SerializedName("size")
