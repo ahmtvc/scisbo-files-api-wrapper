@@ -25,7 +25,7 @@ To use the Files API Wrapper with Maven and JitPack, follow these steps:
     <dependency>
         <groupId>com.github.ahmtvc</groupId>
         <artifactId>scisbo-files-api-wrapper</artifactId>
-        <version>1.0.0</version>
+        <version>2.0.0</version>
     </dependency>
 </dependencies>
 ```
@@ -117,6 +117,56 @@ try {
 }
 ```
 
+### Presigned Upload (preferred)
+
+Rather than streaming bytes through your service, ask the files service to authorise the upload
+and let the client send the bytes straight to it.
+
+```java
+// 1. Authorise the upload. The declared type and size are checked before a token is issued.
+UploadIntentResponse intent = client.requestUploadIntent(
+        "chatapp/group-1/messages",   // path
+        "holiday.jpg",                // filename
+        "image/jpeg",                 // declared content type
+        file.getSize(),               // declared size in bytes
+        Map.of("ACCESS", "PUBLIC"),   // metadata
+        userId);                      // owner, when uploading for one of your users
+
+// 2. Hand intent.getUploadUrl() and intent.getFileId() to the browser, which PUTs the bytes
+//    itself. A server side caller can send them here instead:
+UploadCommitResponse committed = client.uploadBytesToIntent(intent, inputStream, "image/jpeg");
+```
+
+The token is single use and expires (10 minutes by default). When the bytes arrive their real type
+is detected from the content and compared with what was declared, so an upload cannot turn into a
+different kind of file than the one that was authorised.
+
+`uploadFileDirect(...)` does both steps in one call for callers that already hold the content.
+
+### Image Variants and Blurhash
+
+Uploaded images are processed asynchronously into smaller renditions. Ask for one with the
+`variant` parameter:
+
+```java
+String thumbnail = client.generateDownloadUrl(fileId, token, FilesApiClient.VARIANT_THUMBNAIL);
+String medium    = client.generateDownloadUrl(fileId, token, FilesApiClient.VARIANT_MEDIUM);
+String original  = client.generateDownloadUrl(fileId, token, null);
+```
+
+Requesting a variant that does not exist - a non-image, an image still being processed, or anything
+uploaded before variants existed - serves the original rather than failing, so it is always safe to
+ask for a thumbnail.
+
+`FileInfo` carries `width`, `height`, `blurhash` and `variants` once processing has finished; they
+are null until then, so treat them as optional.
+
+### Batch Metadata Lookup
+
+```java
+List<FileInfo> files = client.getFiles(List.of(fileIdA, fileIdB, fileIdC));
+```
+
 ## Core Components
 
 ### 1. FilesApiClient
@@ -136,12 +186,24 @@ FilesApiClient client = new FilesApiClient(config);
 - `uploadMultipartFiles(List<MultipartFile> files, Consumer<List<FileInfo>> onFinish)` - Legacy Spring integration
 - `uploadMultipartFiles(String path, List<MultipartFile> files, Map<String, String> metadata, Consumer<List<FileInfo>> onFinish)` - Legacy with path and metadata
 
+##### Presigned Upload Operations
+
+- `requestUploadIntent(String path, String filename, String contentType, long size)` - Authorise an upload
+- `requestUploadIntent(String path, String filename, String contentType, long size, Map<String, String> metadata, String onBehalfOfUserId)` - Authorise an upload for one of your users
+- `uploadBytesToIntent(UploadIntentResponse intent, InputStream content, String contentType)` - Send the bytes for an intent
+- `uploadFileDirect(...)` - Request an intent and send the bytes in one call
+
+##### Metadata Operations
+
+- `getFiles(List<String> fileIds)` - Look several files up at once
+
 ##### Access Token Operations
 
 - `requestAccessToken(String fileId)` - Request token for single file
 - `requestAccessToken(List<String> fileIds)` - Request token for multiple files
 - `requestAccessTokenAsync(List<String> fileIds)` - Asynchronous token request
 - `generatePreviewUrl(String fileId, String accessToken)` - Generate file preview URL
+- `generateDownloadUrl(String fileId, String accessToken, String variant)` - Generate a URL for a specific size (`thumbnail`, `medium`, or null for the original)
 
 ### 2. FilesApiConfig
 

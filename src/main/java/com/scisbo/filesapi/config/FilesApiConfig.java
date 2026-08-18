@@ -34,7 +34,31 @@ public class FilesApiConfig {
     public String getAccessTokenUrl() {
         return baseUrl + "/access-tokens";
     }
-    
+
+    public String getUploadIntentUrl() {
+        return baseUrl + "/uploads/intent";
+    }
+
+    /**
+     * Resolves the upload URL returned with an intent. It comes back relative, so it is appended
+     * to the configured base rather than used as-is.
+     */
+    public String getUploadUrl(String relativeUploadUrl) {
+        if (relativeUploadUrl == null || relativeUploadUrl.isBlank()) {
+            throw new IllegalArgumentException("The upload intent did not include an upload URL");
+        }
+
+        if (relativeUploadUrl.startsWith("http://") || relativeUploadUrl.startsWith("https://")) {
+            return relativeUploadUrl;
+        }
+
+        return baseUrl + (relativeUploadUrl.startsWith("/") ? relativeUploadUrl : "/" + relativeUploadUrl);
+    }
+
+    public String getBatchMetadataUrl() {
+        return baseUrl + "/files";
+    }
+
     public boolean isLoggingEnabled() {
         return enableLogging;
     }

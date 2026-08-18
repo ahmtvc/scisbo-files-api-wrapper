@@ -5,9 +5,14 @@
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
+    <!--
+        artifactId matches the repository name, which is what JitPack publishes under and what
+        every consuming service already declares. It used to read "files-api-wrapper" here, which
+        resolved only because JitPack ignores it in favour of the repo name.
+    -->
     <groupId>com.github.ahmtvc</groupId>
-    <artifactId>files-api-wrapper</artifactId>
-    <version>1.0.0</version>
+    <artifactId>scisbo-files-api-wrapper</artifactId>
+    <version>2.0.0</version>
     <packaging>jar</packaging>
 
     <name>FilesAPIWrapper</name>

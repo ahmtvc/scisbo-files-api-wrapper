@@ -3,6 +3,7 @@ package com.scisbo.filesapi.api;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.reflect.TypeToken;
 import com.scisbo.filesapi.builder.AccessTokenRequestBuilder;
 import com.scisbo.filesapi.builder.FileDataBuilder;
 import com.scisbo.filesapi.builder.FileUploadRequestBuilder;
@@ -12,17 +13,24 @@ import com.scisbo.filesapi.data.file.FileType;
 import com.scisbo.filesapi.data.request.AccessTokenRequest;
 import com.scisbo.filesapi.data.request.FileData;
 import com.scisbo.filesapi.data.request.FileUploadRequest;
+import com.scisbo.filesapi.data.file.FileVariantInfo;
 import com.scisbo.filesapi.data.response.AccessTokenResponse;
 import com.scisbo.filesapi.data.response.FileUploadResponse;
+import com.scisbo.filesapi.data.response.UploadCommitResponse;
+import com.scisbo.filesapi.data.response.UploadIntentResponse;
 import com.scisbo.filesapi.exception.AccessTokenException;
 import com.scisbo.filesapi.exception.FileUploadException;
+import com.scisbo.filesapi.exception.FilesApiException;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,12 +39,18 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 /**
  * Production-ready Files API client with proper error handling, logging, and async support
  */
 public class FilesApiClient {
-    
+
+    /** Variant names understood by the download endpoint. */
+    public static final String VARIANT_THUMBNAIL = "thumbnail";
+    public static final String VARIANT_MEDIUM = "medium";
+    public static final String VARIANT_ORIGINAL = "original";
+
     private static final Logger logger = Logger.getLogger(FilesApiClient.class.getName());
     
     private final FilesApiConfig config;
@@ -249,8 +263,195 @@ public class FilesApiClient {
      * Generates a preview URL for a file
      */
     public String generatePreviewUrl(String fileId, String accessToken) {
-        return String.format("%s/%s/download?access_token=%s", 
+        return String.format("%s/%s/download?access_token=%s",
                 config.getBaseUrl(), fileId, accessToken);
+    }
+
+    /**
+     * Builds a download URL for a specific rendition of a file.
+     * <p>
+     * Asking for a variant that does not exist is safe: the service serves the original instead of
+     * failing, so callers do not have to check whether processing has finished.
+     *
+     * @param variant     {@link #VARIANT_THUMBNAIL}, {@link #VARIANT_MEDIUM}, or null for the original
+     * @param accessToken may be null for files that are publicly readable
+     */
+    public String generateDownloadUrl(String fileId, String accessToken, String variant) {
+        StringBuilder url = new StringBuilder(config.getBaseUrl()).append("/").append(fileId).append("/download");
+
+        char separator = '?';
+
+        if (accessToken != null && !accessToken.isBlank()) {
+            url.append(separator).append("access_token=").append(URLEncoder.encode(accessToken, StandardCharsets.UTF_8));
+            separator = '&';
+        }
+
+        if (variant != null && !variant.isBlank() && !VARIANT_ORIGINAL.equals(variant)) {
+            url.append(separator).append("variant=").append(URLEncoder.encode(variant, StandardCharsets.UTF_8));
+        }
+
+        return url.toString();
+    }
+
+    /**
+     * Asks the service to authorise an upload, without sending any bytes yet.
+     * <p>
+     * The declared type and size are checked here and again against the bytes that arrive, so an
+     * upload cannot turn into something other than what was authorised.
+     *
+     * @param onBehalfOfUserId the end user the file belongs to; the caller's own API key identity
+     *                         is used when this is null
+     */
+    public UploadIntentResponse requestUploadIntent(String path, String filename, String contentType,
+                                                    long size, Map<String, String> metadata,
+                                                    String onBehalfOfUserId) throws FileUploadException {
+        try {
+            JsonObject body = new JsonObject();
+            body.addProperty("path", path == null ? "" : path);
+            body.addProperty("filename", filename);
+            body.addProperty("contentType", contentType);
+            body.addProperty("size", size);
+            body.add("metadata", gson.toJsonTree(metadata == null ? Map.of() : metadata));
+
+            if (onBehalfOfUserId != null && !onBehalfOfUserId.isBlank()) {
+                body.addProperty("onBehalfOfUserId", onBehalfOfUserId);
+            }
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(config.getUploadIntentUrl()))
+                    .header("Content-Type", "application/json")
+                    .header("API-KEY", config.getApiKey())
+                    .timeout(config.getReadTimeout())
+                    .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(body)))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new FileUploadException(
+                        "Upload intent request failed with status: " + response.statusCode(),
+                        response.statusCode(),
+                        response.body());
+            }
+
+            return parseData(response.body(), UploadIntentResponse.class, "upload intent");
+
+        } catch (IOException | InterruptedException e) {
+            throw new FileUploadException("Failed to request an upload intent", e);
+        }
+    }
+
+    public UploadIntentResponse requestUploadIntent(String path, String filename, String contentType, long size)
+            throws FileUploadException {
+        return requestUploadIntent(path, filename, contentType, size, null, null);
+    }
+
+    /**
+     * Sends the bytes for a previously issued intent. The token may only be redeemed once.
+     */
+    public UploadCommitResponse uploadBytesToIntent(UploadIntentResponse intent, InputStream content,
+                                                    String contentType) throws FileUploadException {
+        try {
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(config.getUploadUrl(intent.getUploadUrl())))
+                    .header("Content-Type", contentType == null ? "application/octet-stream" : contentType)
+                    .timeout(config.getReadTimeout())
+                    .PUT(HttpRequest.BodyPublishers.ofInputStream(() -> content))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new FileUploadException(
+                        "File upload failed with status: " + response.statusCode(),
+                        response.statusCode(),
+                        response.body());
+            }
+
+            return parseData(response.body(), UploadCommitResponse.class, "upload");
+
+        } catch (IOException | InterruptedException e) {
+            throw new FileUploadException("Failed to upload file content", e);
+        }
+    }
+
+    /**
+     * Requests an intent and immediately sends the bytes.
+     * <p>
+     * For a service that already holds the content. A browser upload should use the two calls
+     * separately, so the bytes never pass through the calling service at all.
+     */
+    public UploadCommitResponse uploadFileDirect(String path, String filename, String contentType,
+                                                 InputStream content, long size,
+                                                 Map<String, String> metadata, String onBehalfOfUserId)
+            throws FileUploadException {
+
+        UploadIntentResponse intent =
+                requestUploadIntent(path, filename, contentType, size, metadata, onBehalfOfUserId);
+
+        return uploadBytesToIntent(intent, content, contentType);
+    }
+
+    /**
+     * Looks up several files in one call, so a caller resolving a batch of ids does not issue a
+     * request per file.
+     */
+    public List<FileInfo> getFiles(List<String> fileIds) throws FilesApiException {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+
+        try {
+            String ids = fileIds.stream()
+                    .map(id -> URLEncoder.encode(id, StandardCharsets.UTF_8))
+                    .collect(Collectors.joining(","));
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(config.getBatchMetadataUrl() + "?ids=" + ids))
+                    .header("API-KEY", config.getApiKey())
+                    .timeout(config.getReadTimeout())
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new FilesApiException(
+                        "Files metadata request failed with status: " + response.statusCode(),
+                        response.statusCode(),
+                        response.body());
+            }
+
+            JsonObject root = gson.fromJson(response.body(), JsonObject.class);
+
+            if (root == null || !root.has("data") || root.get("data").isJsonNull()) {
+                return List.of();
+            }
+
+            FileInfo[] files = gson.fromJson(root.get("data"), FileInfo[].class);
+
+            return files == null ? List.of() : List.of(files);
+
+        } catch (IOException | InterruptedException e) {
+            throw new FilesApiException("Failed to fetch files metadata", e);
+        }
+    }
+
+    /** Unwraps the service's {@code {success, message, data}} envelope. */
+    private <T> T parseData(String responseBody, Class<T> type, String what) throws FileUploadException {
+        try {
+            JsonObject root = gson.fromJson(responseBody, JsonObject.class);
+
+            if (root == null || !root.has("data") || root.get("data").isJsonNull()) {
+                throw new FileUploadException("The " + what + " response contained no data");
+            }
+
+            return gson.fromJson(root.get("data"), type);
+        } catch (FileUploadException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new FileUploadException("Failed to parse the " + what + " response", e);
+        }
     }
     
     private FileUploadResponse parseUploadResponse(String responseBody) throws FileUploadException {
@@ -283,7 +484,26 @@ public class FilesApiClient {
                                         .toInstant()
                                         .toEpochMilli()
                         );
-                        
+
+                        // Present only for processed images; absent for everything else, which is
+                        // why each field is read defensively rather than assumed.
+                        if (fileMetadata.has("size") && !fileMetadata.get("size").isJsonNull()) {
+                            fileInfo.setSize(fileMetadata.get("size").getAsLong());
+                        }
+                        if (fileMetadata.has("width") && !fileMetadata.get("width").isJsonNull()) {
+                            fileInfo.setWidth(fileMetadata.get("width").getAsInt());
+                        }
+                        if (fileMetadata.has("height") && !fileMetadata.get("height").isJsonNull()) {
+                            fileInfo.setHeight(fileMetadata.get("height").getAsInt());
+                        }
+                        if (fileMetadata.has("blurhash") && !fileMetadata.get("blurhash").isJsonNull()) {
+                            fileInfo.setBlurhash(fileMetadata.get("blurhash").getAsString());
+                        }
+                        if (fileMetadata.has("variants") && !fileMetadata.get("variants").isJsonNull()) {
+                            fileInfo.setVariants(gson.fromJson(fileMetadata.get("variants"),
+                                    new TypeToken<Map<String, FileVariantInfo>>() {}.getType()));
+                        }
+
                         fileInfos.add(fileInfo);
                     });
                     
