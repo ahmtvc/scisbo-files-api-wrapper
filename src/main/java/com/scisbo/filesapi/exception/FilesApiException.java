@@ -1,54 +1,27 @@
 package com.scisbo.filesapi.exception;
 
-/**
- * Base exception for Files API operations
- */
+/** A call to the files service failed. {@link #getStatusCode()} is -1 when no response arrived. */
 public class FilesApiException extends Exception {
-    
+
+    private static final int NO_RESPONSE = -1;
+
     private final int statusCode;
-    private final String responseBody;
-    
-    public FilesApiException(String message) {
+
+    public FilesApiException(String message, int statusCode) {
         super(message);
-        this.statusCode = -1;
-        this.responseBody = null;
+        this.statusCode = statusCode;
     }
-    
+
     public FilesApiException(String message, Throwable cause) {
         super(message, cause);
-        this.statusCode = -1;
-        this.responseBody = null;
+        this.statusCode = NO_RESPONSE;
     }
-    
-    public FilesApiException(String message, int statusCode, String responseBody) {
-        super(message);
-        this.statusCode = statusCode;
-        this.responseBody = responseBody;
-    }
-    
-    public FilesApiException(String message, int statusCode, String responseBody, Throwable cause) {
-        super(message, cause);
-        this.statusCode = statusCode;
-        this.responseBody = responseBody;
-    }
-    
+
     public int getStatusCode() {
-        return statusCode;
+        return this.statusCode;
     }
-    
-    public String getResponseBody() {
-        return responseBody;
-    }
-    
-    @Override
-    public String toString() {
-        StringBuilder sb = new StringBuilder(super.toString());
-        if (statusCode != -1) {
-            sb.append(" [Status: ").append(statusCode).append("]");
-        }
-        if (responseBody != null) {
-            sb.append(" [Response: ").append(responseBody).append("]");
-        }
-        return sb.toString();
+
+    public boolean isNotFound() {
+        return this.statusCode == 404;
     }
 }

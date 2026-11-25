@@ -7,59 +7,31 @@ import lombok.NonNull;
 import java.time.Duration;
 
 /**
- * Configuration class for the Files API
+ * {@code baseUrl} is the files service root, e.g. {@code http://files-service} or
+ * {@code https://host/api-gateway/api/v1/files}; a trailing slash is ignored.
  */
 @Getter
 @Builder
 public class FilesApiConfig {
-    
+
     @NonNull
     private final String apiKey;
-    
+
     @NonNull
     private final String baseUrl;
-    
+
     @Builder.Default
-    private final Duration connectionTimeout = Duration.ofSeconds(30);
-    
+    private final Duration connectTimeout = Duration.ofSeconds(10);
+
     @Builder.Default
-    private final Duration readTimeout = Duration.ofSeconds(60);
-    
+    private final Duration requestTimeout = Duration.ofSeconds(30);
+
+    /** Sending bytes takes longer than an API call. */
     @Builder.Default
-    private final int maxRetries = 3;
-    
-    @Builder.Default
-    private final boolean enableLogging = true;
+    private final Duration uploadTimeout = Duration.ofMinutes(5);
 
-    public String getAccessTokenUrl() {
-        return baseUrl + "/access-tokens";
-    }
-
-    public String getUploadIntentUrl() {
-        return baseUrl + "/uploads/intent";
-    }
-
-    /**
-     * Resolves the upload URL returned with an intent. It comes back relative, so it is appended
-     * to the configured base rather than used as-is.
-     */
-    public String getUploadUrl(String relativeUploadUrl) {
-        if (relativeUploadUrl == null || relativeUploadUrl.isBlank()) {
-            throw new IllegalArgumentException("The upload intent did not include an upload URL");
-        }
-
-        if (relativeUploadUrl.startsWith("http://") || relativeUploadUrl.startsWith("https://")) {
-            return relativeUploadUrl;
-        }
-
-        return baseUrl + (relativeUploadUrl.startsWith("/") ? relativeUploadUrl : "/" + relativeUploadUrl);
-    }
-
-    public String getBatchMetadataUrl() {
-        return baseUrl + "/files";
-    }
-
-    public boolean isLoggingEnabled() {
-        return enableLogging;
+    public String url(String path) {
+        String root = this.baseUrl.endsWith("/") ? this.baseUrl.substring(0, this.baseUrl.length() - 1) : this.baseUrl;
+        return root + path;
     }
 }
